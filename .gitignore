@@ -1,0 +1,30 @@
+# Large Data & Indexes
+*.fastq
+*.fq
+*.fasta
+*.fa
+*.gtf
+*.bam
+*.bai
+*.zip
+*.gz
+
+# folders
+data/
+logs/
+refs/host/
+refs/custom_lists/
+refs/kraken_curated/
+refs/custom_refs/
+refs/validation/
+results/
+
+# Software/Env
+#envs/
+*.txt
+
+# Slurm/System
+*.out
+*.err
+*.log
+.DS_Store
