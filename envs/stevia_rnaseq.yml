@@ -1,0 +1,14 @@
+name: stevia_rnaseq
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - fastp
+  - fastqc
+  - multiqc
+  - hisat2
+  - samtools
+  - seqkit
+  - pigz

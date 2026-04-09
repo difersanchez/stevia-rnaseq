@@ -1,0 +1,294 @@
+---
+title: "Stevia RNA-seq pathogen detection report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+params:
+  project_dir: "."
+  sample: "V350344566_L01_SE01"
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(jsonlite)
+library(janitor)
+library(knitr)
+library(DT)
+library(scales)
+library(patchwork)
+
+proj <- normalizePath(params$project_dir)
+sample <- params$sample
+
+read_kraken_report <- function(path) {
+  readr::read_tsv(
+    path,
+    col_names = c("pct", "clade_reads", "taxon_reads", "rank", "taxid", "name"),
+    show_col_types = FALSE
+  ) %>%
+    mutate(name = stringr::str_trim(name))
+}
+
+safe_read_tsv <- function(path, ...) {
+  if (!file.exists(path)) {
+    stop(sprintf("Required file not found: %s", path))
+  }
+  readr::read_tsv(path, ...)
+}
+
+safe_read_lines <- function(path) {
+  if (!file.exists(path)) {
+    stop(sprintf("Required file not found: %s", path))
+  }
+  readLines(path)
+}
+
+fastp_json_path    <- file.path(proj, "results", "trim", paste0(sample, ".fastp.json"))
+hisat2_sum_path    <- file.path(proj, "results", "host", paste0(sample, ".hisat2.summary.txt"))
+kraken_report_path <- file.path(proj, "results", "pathogen", paste0(sample, ".k2.report"))
+bracken_sp_path    <- file.path(proj, "results", "pathogen", paste0(sample, ".bracken.species.tsv"))
+bracken_gn_path    <- file.path(proj, "results", "pathogen", paste0(sample, ".bracken.genus.tsv"))
+idxstats_path      <- file.path(proj, "results", "pathogen", paste0(sample, ".idxstats.tsv"))
+coverage_path      <- file.path(proj, "results", "pathogen", paste0(sample, ".coverage.tsv"))
+depth_path         <- file.path(proj, "results", "pathogen", paste0(sample, ".depth.tsv"))
+blast_hits_path    <- file.path(proj, "results", "pathogen", paste0(sample, ".contigs_vs_pathogen_refs.tsv"))
+refmap_path        <- file.path(proj, "refs", "validation", "reference_map.tsv")
+watchlist_path     <- file.path(proj, "refs", "custom_lists", "stevia_priority_watchlist.tsv")
+
+fastp_json <- jsonlite::fromJSON(fastp_json_path)
+hisat2_summary_lines <- safe_read_lines(hisat2_sum_path)
+kraken <- read_kraken_report(kraken_report_path)
+
+bracken_sp <- safe_read_tsv(bracken_sp_path, show_col_types = FALSE)
+bracken_gn <- safe_read_tsv(bracken_gn_path, show_col_types = FALSE)
+
+idxstats <- safe_read_tsv(
+  idxstats_path,
+  col_names = c("ref", "length", "mapped", "unmapped"),
+  show_col_types = FALSE
+)
+
+coverage <- safe_read_tsv(
+  coverage_path,
+  show_col_types = FALSE
+) %>%
+  rename(ref = 1)
+
+depth <- safe_read_tsv(
+  depth_path,
+  col_names = c("ref", "pos", "depth"),
+  show_col_types = FALSE
+)
+
+blast_hits <- safe_read_tsv(
+  blast_hits_path,
+  col_names = c(
+    "qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
+    "qstart", "qend", "sstart", "send", "evalue", "bitscore"
+  ),
+  show_col_types = FALSE
+)
+
+refmap <- safe_read_tsv(
+  refmap_path,
+  col_names = c("ref", "header"),
+  show_col_types = FALSE
+)
+
+watchlist <- safe_read_tsv(
+  watchlist_path,
+  show_col_types = FALSE
+)
+
+summary_tbl <- tibble(
+  sample = sample,
+  raw_reads = fastp_json$summary$before_filtering$total_reads,
+  trimmed_reads = fastp_json$summary$after_filtering$total_reads,
+  raw_bases = fastp_json$summary$before_filtering$total_bases,
+  trimmed_bases = fastp_json$summary$after_filtering$total_bases,
+  q20_rate_after = fastp_json$summary$after_filtering$q20_rate,
+  q30_rate_after = fastp_json$summary$after_filtering$q30_rate,
+  gc_content_after = fastp_json$summary$after_filtering$gc_content
+)
+
+species_tbl <- bracken_sp %>%
+  arrange(desc(new_est_reads))
+
+genus_tbl <- bracken_gn %>%
+  arrange(desc(new_est_reads))
+
+priority_hits <- species_tbl %>%
+  mutate(name_lc = str_to_lower(name)) %>%
+  rowwise() %>%
+  mutate(
+    stevia_priority = any(str_detect(name_lc, str_to_lower(watchlist$taxon))),
+    priority_match = paste(
+      watchlist$taxon[str_detect(name_lc, str_to_lower(watchlist$taxon))],
+      collapse = "; "
+    )
+  ) %>%
+  ungroup() %>%
+  filter(stevia_priority) %>%
+  arrange(desc(new_est_reads))
+
+ref_cov <- idxstats %>%
+  filter(ref != "*", mapped > 0) %>%
+  left_join(refmap, by = "ref") %>%
+  left_join(
+    coverage %>% select(ref, numreads, covbases, coverage, meandepth),
+    by = "ref"
+  ) %>%
+  arrange(desc(mapped))
+
+best_contig_hits <- blast_hits %>%
+  group_by(qseqid) %>%
+  slice_max(order_by = bitscore, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  arrange(desc(bitscore))
+
+top_species_plot_tbl <- species_tbl %>%
+  slice_max(order_by = new_est_reads, n = 15, with_ties = FALSE) %>%
+  mutate(name = forcats::fct_reorder(name, new_est_reads))
+
+top_refs <- ref_cov %>%
+  slice_max(order_by = mapped, n = 9, with_ties = FALSE) %>%
+  pull(ref)
+```
+
+# 1. Overview
+
+This report summarizes pathogen detection from one **Stevia rebaudiana** RNA-seq sample after:
+
+1. read QC and trimming,
+2. host depletion with HISAT2,
+3. taxonomic classification of non-host reads with Kraken2 and Bracken,
+4. reference-level validation with Bowtie2 coverage,
+5. contig assembly with rnaSPAdes and BLAST support.
+
+# 2. Sample summary
+
+```{r}
+kable(summary_tbl, digits = 4)
+```
+
+# 3. Host depletion summary
+
+```{r results='asis'}
+cat("```\n")
+cat(paste(hisat2_summary_lines, collapse = "\n"))
+cat("\n```")
+```
+
+# 4. Kraken2 classification overview
+
+```{r}
+kraken_summary <- kraken %>%
+  filter(rank %in% c("D", "K", "P", "C", "O", "F", "G", "S")) %>%
+  arrange(desc(taxon_reads)) %>%
+  head(20)
+
+datatable(kraken_summary, options = list(pageLength = 20))
+```
+
+# 5. Bracken species-level abundance
+
+```{r}
+datatable(species_tbl, options = list(pageLength = 20, scrollX = TRUE))
+```
+
+```{r fig.width=10, fig.height=6}
+ggplot(top_species_plot_tbl, aes(x = name, y = new_est_reads)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Top detected species by Bracken estimated reads",
+    x = "Species",
+    y = "Estimated reads"
+  ) +
+  theme_bw(base_size = 11)
+```
+
+# 6. Bracken genus-level abundance
+
+```{r}
+datatable(genus_tbl, options = list(pageLength = 20, scrollX = TRUE))
+```
+
+# 7. Stevia-priority taxa
+
+```{r}
+if (nrow(priority_hits) == 0) {
+  cat("No taxa from the Stevia-priority watchlist were detected in the Bracken species table.")
+} else {
+  datatable(priority_hits, options = list(pageLength = 15, scrollX = TRUE))
+}
+```
+
+# 8. Reference-level mapping support
+
+```{r}
+datatable(ref_cov, options = list(pageLength = 20, scrollX = TRUE))
+```
+
+# 9. Coverage plots for top supported references
+
+```{r fig.height=10, fig.width=14}
+if (length(top_refs) == 0) {
+  plot.new()
+  text(0.5, 0.5, "No mapped pathogen references available for plotting.")
+} else {
+  depth %>%
+    filter(ref %in% top_refs) %>%
+    ggplot(aes(x = pos, y = depth)) +
+    geom_line() +
+    facet_wrap(~ ref, scales = "free_x") +
+    labs(
+      title = "Depth across top pathogen references",
+      x = "Reference position",
+      y = "Depth"
+    ) +
+    theme_bw(base_size = 11)
+}
+```
+
+# 10. Contig evidence
+
+```{r}
+datatable(best_contig_hits, options = list(pageLength = 20, scrollX = TRUE))
+```
+
+# 11. Integrated interpretation
+
+```{r}
+integrated_hits <- species_tbl %>%
+  select(name, taxonomy_id, new_est_reads, fraction_total_reads) %>%
+  left_join(
+    priority_hits %>% select(name, stevia_priority, priority_match),
+    by = "name"
+  ) %>%
+  mutate(
+    stevia_priority = replace_na(stevia_priority, FALSE),
+    priority_match = replace_na(priority_match, "")
+  ) %>%
+  arrange(desc(new_est_reads))
+
+datatable(integrated_hits, options = list(pageLength = 20, scrollX = TRUE))
+```
+
+A pathogen candidate is strongest when it has support from multiple layers:
+
+1. **classifier evidence** in Kraken2/Bracken,
+2. **reference mapping support** with meaningful mapped reads and coverage,
+3. **contig-level BLAST support** from assembled non-host reads,
+4. **biological plausibility** for Stevia or plant-associated systems.
+
+For fungi, mapping breadth can be conservative because RNA-seq reads are aligned back to genomic references rather than transcript references.
+
+# 12. Session info
+
+```{r}
+sessionInfo()
+```
+

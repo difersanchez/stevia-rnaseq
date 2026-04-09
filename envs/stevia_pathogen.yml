@@ -1,0 +1,15 @@
+name: stevia_pathogen
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - kraken2
+  - bracken
+  - bowtie2
+  - blast
+  - spades
+  - samtools
+  - seqkit
+  - pigz

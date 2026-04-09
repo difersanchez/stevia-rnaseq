@@ -1,0 +1,15 @@
+name: stevia_setup
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - mamba
+  - ncbi-datasets-cli
+  - ncbi-genome-download
+  - kraken2
+  - seqkit
+  - pigz
+  - unzip
+  - jq
