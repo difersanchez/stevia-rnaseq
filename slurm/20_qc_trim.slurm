@@ -7,7 +7,8 @@
 #SBATCH --output=logs/%x_%j.out  # Standard output log
 #SBATCH --error=logs/%x_%j.err   # Standard error log
 ##SBATCH --mail-type=BEGIN,END,FAIL
-##SBATCH --mail-user=difersanchez@pol.una.py
+##SBATCH --mail-user=user@youremail.com # your email
+
 
 set -euo pipefail
 
