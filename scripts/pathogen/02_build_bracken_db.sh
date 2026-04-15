@@ -20,17 +20,12 @@ print(round(total / n))
 PY
 )
 
-# Going into the DB directory so paths are relative and easy for Bracken
-cd refs/kraken_curated
+echo "Read length after trimming: $TRIM_READ_LEN"
 
-# Ensure the prelim_map is where Bracken expects it (root of the DB)
-if [ ! -f "prelim_map.txt" ]; then
-    cp taxonomy/prelim_map.txt .
-fi
+echo "Running Bracken"
 
-# Run the build again
-# Using -d . because we are already inside the directory
-bracken-build -d . -t 1 -k 35 -l "$TRIM_READ_LEN"
+# Run the build
+bracken-build -d refs/kraken_curated -t 1 -k 35 -l "$TRIM_READ_LEN"
 
-#bracken-build -d refs/kraken_curated -t "$THREADS" -k 35 -l "$TRIM_READ_LEN"
+echo "DONE: Bracken build"
 

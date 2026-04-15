@@ -17,6 +17,18 @@ set -euo pipefail
 source "$HOME/miniforge3/etc/profile.d/conda.sh"
 conda activate stevia_pathogen
 
-#bash scripts/pathogen/01_build_kraken_db.sh
-#bash scripts/pathogen/02_build_bracken_db.sh
-bash scripts/pathogen/02a_build_bracken_db.sh
+echo "Running kraken"
+
+bash scripts/pathogen/01_build_kraken_db.sh
+
+echo "DONE:scripts/pathogen/01_build_kraken_db.sh"
+
+#bash scripts/pathogen/01a_fix_kraken_database.sh #run this if 01 fails 
+
+echo "Running bracken build database"
+
+bash scripts/pathogen/02_build_bracken_db.sh
+
+echo "DONE: scripts/pathogen/02_build_bracken_db.sh"
+
+echo "DONE: SLURM JOB"

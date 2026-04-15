@@ -8,3 +8,5 @@ source config/project.env
 #kraken2-build --build --threads "$THREADS" --db refs/kraken_curated
 kraken2-build --build --threads 1 --db refs/kraken_curated
 
+echo "DONE: Kraken build database @ refs/kraken_curated"
+
