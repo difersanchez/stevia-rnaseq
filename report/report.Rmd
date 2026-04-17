@@ -1,16 +1,28 @@
 ---
 title: "Stevia RNA-seq pathogen detection report"
+author:
+  - name: "DFSM"
+    affiliation: |
+      Bioinformatics department
+      NIDTec - Polytechnic School
+      National University of Asuncion
+date: "`r Sys.Date()`"
 output:
   html_document:
     toc: true
     toc_float: true
-    number_sections: true
 params:
   project_dir: "."
   sample: "V350344566_L01_SE01"
 ---
 
-```{r setup, message=FALSE, warning=FALSE}
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+
 library(tidyverse)
 library(jsonlite)
 library(janitor)
@@ -52,7 +64,7 @@ bracken_sp_path    <- file.path(proj, "results", "pathogen", paste0(sample, ".br
 bracken_gn_path    <- file.path(proj, "results", "pathogen", paste0(sample, ".bracken.genus.tsv"))
 idxstats_path      <- file.path(proj, "results", "pathogen", paste0(sample, ".idxstats.tsv"))
 coverage_path      <- file.path(proj, "results", "pathogen", paste0(sample, ".coverage.tsv"))
-depth_path         <- file.path(proj, "results", "pathogen", paste0(sample, ".depth.tsv"))
+depth_path         <- file.path(proj, "results", "pathogen", paste0(sample, ".depth_top.tsv"))
 blast_hits_path    <- file.path(proj, "results", "pathogen", paste0(sample, ".contigs_vs_pathogen_refs.tsv"))
 refmap_path        <- file.path(proj, "refs", "validation", "reference_map.tsv")
 watchlist_path     <- file.path(proj, "refs", "custom_lists", "stevia_priority_watchlist.tsv")
@@ -76,11 +88,15 @@ coverage <- safe_read_tsv(
 ) %>%
   rename(ref = 1)
 
-depth <- safe_read_tsv(
-  depth_path,
-  col_names = c("ref", "pos", "depth"),
-  show_col_types = FALSE
-)
+depth <- if (file.exists(depth_path) && file.info(depth_path)$size > 0) {
+  safe_read_tsv(
+    depth_path,
+    col_names = c("ref", "pos", "depth"),
+    show_col_types = FALSE
+  )
+} else {
+  tibble(ref = character(), pos = integer(), depth = integer())
+}
 
 blast_hits <- safe_read_tsv(
   blast_hits_path,
@@ -157,7 +173,7 @@ top_refs <- ref_cov %>%
   pull(ref)
 ```
 
-# 1. Overview
+## 1. Overview
 
 This report summarizes pathogen detection from one **Stevia rebaudiana** RNA-seq sample after:
 
@@ -167,13 +183,13 @@ This report summarizes pathogen detection from one **Stevia rebaudiana** RNA-seq
 4. reference-level validation with Bowtie2 coverage,
 5. contig assembly with rnaSPAdes and BLAST support.
 
-# 2. Sample summary
+## 2. Sample summary
 
-```{r}
+```{r chunk2}
 kable(summary_tbl, digits = 4)
 ```
 
-# 3. Host depletion summary
+## 3. Host depletion summary
 
 ```{r results='asis'}
 cat("```\n")
@@ -181,9 +197,9 @@ cat(paste(hisat2_summary_lines, collapse = "\n"))
 cat("\n```")
 ```
 
-# 4. Kraken2 classification overview
+## 4. Kraken2 classification overview
 
-```{r}
+```{r chunk4}
 kraken_summary <- kraken %>%
   filter(rank %in% c("D", "K", "P", "C", "O", "F", "G", "S")) %>%
   arrange(desc(taxon_reads)) %>%
@@ -192,13 +208,13 @@ kraken_summary <- kraken %>%
 datatable(kraken_summary, options = list(pageLength = 20))
 ```
 
-# 5. Bracken species-level abundance
+## 5. Bracken species-level abundance
 
-```{r}
+```{r chunk5}
 datatable(species_tbl, options = list(pageLength = 20, scrollX = TRUE))
 ```
 
-```{r fig.width=10, fig.height=6}
+```{r chunk5a, fig.width=10, fig.height=6}
 ggplot(top_species_plot_tbl, aes(x = name, y = new_est_reads)) +
   geom_col() +
   coord_flip() +
@@ -210,15 +226,15 @@ ggplot(top_species_plot_tbl, aes(x = name, y = new_est_reads)) +
   theme_bw(base_size = 11)
 ```
 
-# 6. Bracken genus-level abundance
+## 6. Bracken genus-level abundance
 
-```{r}
+```{r chunk6}
 datatable(genus_tbl, options = list(pageLength = 20, scrollX = TRUE))
 ```
 
-# 7. Stevia-priority taxa
+## 7. Stevia-priority taxa
 
-```{r}
+```{r chunk7}
 if (nrow(priority_hits) == 0) {
   cat("No taxa from the Stevia-priority watchlist were detected in the Bracken species table.")
 } else {
@@ -226,42 +242,99 @@ if (nrow(priority_hits) == 0) {
 }
 ```
 
-# 8. Reference-level mapping support
+## 8. Reference-level mapping support
 
-```{r}
-datatable(ref_cov, options = list(pageLength = 20, scrollX = TRUE))
+```{r chunk8}
+if (nrow(ref_cov) == 0) {
+  cat("No mapped pathogen references were found in the validation BAM.")
+} else {
+  datatable(ref_cov, options = list(pageLength = 20, scrollX = TRUE))
+}
+
 ```
 
-# 9. Coverage plots for top supported references
+## 8b. Plot diagnostics
 
-```{r fig.height=10, fig.width=14}
-if (length(top_refs) == 0) {
+```{r chunk8b} 
+cat("Rows in ref_cov:", nrow(ref_cov), "\n")
+cat("Rows in depth:", nrow(depth), "\n")
+cat("Number of top_refs:", length(top_refs), "\n")
+
+if (length(top_refs) > 0) {
+  print(head(top_refs, 10))
+}
+
+depth_matches <- depth %>%
+  filter(ref %in% top_refs)
+
+cat("Rows in depth matching top_refs:", nrow(depth_matches), "\n")
+```
+
+
+## 9. Coverage plots for top supported references
+
+<!-- ```{r fig.height=10, fig.width=14}
+#if (length(top_refs) == 0) {
+#  plot.new()
+#  text(0.5, 0.5, "No mapped pathogen references available for plotting.")
+#} else {
+#  depth %>%
+#    filter(ref %in% top_refs) %>%
+#    ggplot(aes(x = pos, y = depth)) +
+#    geom_line() +
+#    facet_wrap(~ ref, scales = "free_x") +
+#    labs(
+#      title = "Depth across top pathogen references",
+#      x = "Reference position",
+#      y = "Depth"
+#    ) +
+#    theme_bw(base_size = 11)
+#}
+```
+-->
+
+```{r chunk9, fig.height=10, fig.width=14}
+depth_plot_df <- depth %>%
+  filter(ref %in% top_refs, !is.na(ref))
+
+if (length(top_refs) == 0 || nrow(depth_plot_df) == 0) {
   plot.new()
-  text(0.5, 0.5, "No mapped pathogen references available for plotting.")
+  text(
+    0.5, 0.5,
+    "No mapped pathogen references with depth data available for plotting."
+  )
 } else {
-  depth %>%
-    filter(ref %in% top_refs) %>%
-    ggplot(aes(x = pos, y = depth)) +
+  depth_plot_binned <- depth_plot_df %>%
+    group_by(ref) %>%
+    mutate(bin = ntile(pos, 1000)) %>%
+    group_by(ref, bin) %>%
+    summarise(
+      pos = median(pos),
+      depth = mean(depth),
+      .groups = "drop"
+    )
+
+  ggplot(depth_plot_binned, aes(x = pos, y = depth)) +
     geom_line() +
     facet_wrap(~ ref, scales = "free_x") +
     labs(
-      title = "Depth across top pathogen references",
+      title = "Depth across top pathogen references (binned)",
       x = "Reference position",
-      y = "Depth"
+      y = "Mean depth"
     ) +
     theme_bw(base_size = 11)
 }
 ```
 
-# 10. Contig evidence
+## 10. Contig evidence
 
-```{r}
+```{r chunk10}
 datatable(best_contig_hits, options = list(pageLength = 20, scrollX = TRUE))
 ```
 
-# 11. Integrated interpretation
+## 11. Integrated interpretation
 
-```{r}
+```{r chunk11} 
 integrated_hits <- species_tbl %>%
   select(name, taxonomy_id, new_est_reads, fraction_total_reads) %>%
   left_join(
@@ -286,9 +359,9 @@ A pathogen candidate is strongest when it has support from multiple layers:
 
 For fungi, mapping breadth can be conservative because RNA-seq reads are aligned back to genomic references rather than transcript references.
 
-# 12. Session info
+## 12. Session info
 
-```{r}
+```{r chunk12}
 sessionInfo()
 ```
 

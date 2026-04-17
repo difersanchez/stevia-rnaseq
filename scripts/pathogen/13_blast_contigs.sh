@@ -3,6 +3,9 @@ set -euo pipefail
 
 source config/project.env
 
+# Automatically use the number defined in --cpus-per-task
+export THREADS=${SLURM_CPUS_PER_TASK}
+
 blastn \
   -query "results/assembly/${SAMPLE}_rnaspades/transcripts.fasta" \
   -db refs/validation/pathogen_refs \

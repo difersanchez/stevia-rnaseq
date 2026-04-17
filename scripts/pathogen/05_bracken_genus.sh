@@ -3,20 +3,26 @@ set -euo pipefail
 
 source config/project.env
 
-READ_LEN=$(python - <<'PY' "results/nonhost/${SAMPLE}_nonhost_R1.fq.gz"
-import gzip, sys
-n = 0
-total = 0
-with gzip.open(sys.argv[1], "rt") as fh:
-    for i, line in enumerate(fh, 1):
-        if i % 4 == 2:
-            total += len(line.rstrip())
-            n += 1
-            if n == 100000:
-                break
-print(round(total / n))
-PY
-)
+# Automatically use the number defined in --cpus-per-task
+export THREADS=${SLURM_CPUS_PER_TASK}
+
+
+#READ_LEN=$(python - <<'PY' "results/nonhost/${SAMPLE}_nonhost_R1.fq.gz"
+#import gzip, sys
+#n = 0
+#total = 0
+#with gzip.open(sys.argv[1], "rt") as fh:
+#    for i, line in enumerate(fh, 1):
+#        if i % 4 == 2:
+#            total += len(line.rstrip())
+#            n += 1
+#            if n == 100000:
+#                break
+#print(round(total / n))
+#PY
+#)
+
+READ_LEN=144
 
 bracken \
   -d refs/kraken_curated \
@@ -24,4 +30,4 @@ bracken \
   -o "results/pathogen/${SAMPLE}.bracken.genus.tsv" \
   -r "$READ_LEN" \
   -l G \
-  -t 10
+  -t ${THREADS}

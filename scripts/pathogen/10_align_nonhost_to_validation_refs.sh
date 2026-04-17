@@ -4,6 +4,9 @@ set -euo pipefail
 source config/project.env
 mkdir -p results/pathogen
 
+# Automatically use the number defined in --cpus-per-task
+export THREADS=${SLURM_CPUS_PER_TASK}
+
 NONHOST_R1="results/nonhost/${SAMPLE}_nonhost_R1.fq.gz"
 NONHOST_R2="results/nonhost/${SAMPLE}_nonhost_R2.fq.gz"
 
@@ -13,6 +16,6 @@ bowtie2 \
   -1 "$NONHOST_R1" \
   -2 "$NONHOST_R2" \
   -p "$THREADS" 2> "results/pathogen/${SAMPLE}.bowtie2.log" \
-  | samtools sort -@ 4 -o "results/pathogen/${SAMPLE}.vs_pathogens.bam"
+  | samtools sort -@ 1 -o "results/pathogen/${SAMPLE}.vs_pathogens.bam"
 
 samtools index "results/pathogen/${SAMPLE}.vs_pathogens.bam"
